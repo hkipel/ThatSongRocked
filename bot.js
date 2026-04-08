@@ -6,6 +6,7 @@ const cron = require("node-cron");
 // ── Config ────────────────────────────────────────────────────────────────────
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.DISCORD_CHANNEL_ID;
+const EXCLUDED_USER_IDS = ["578024967057309726"];
 const CRON_SCHEDULE = "0 14 * * 1-5";          // 10:00 AM EDT (UTC-4), Mon/Wed/Fri
 const MESSAGE_TEMPLATE = (user) => `🎵 THAT SONG ROCKED! ${user} - it's your turn to pick an older song that ROCKED! 🎶`;
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ async function getChannelMembers(channel) {
   // Filter to members who have permission to view this channel, excluding bots
   const members = guild.members.cache.filter((member) => {
     if (member.user.bot) return false;
+    if (EXCLUDED_USER_IDS.includes(member.user.id)) return false;
     const perms = channel.permissionsFor(member);
     return perms && perms.has("ViewChannel") && perms.has("SendMessages");
   });
