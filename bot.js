@@ -23,7 +23,7 @@ client.once("clientReady", () => {
   console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (UTC)`);
  
   // Uncomment the line below to send a test message immediately on startup
-   pickAndMention();
+  // pickAndMention();
  
   cron.schedule(CRON_SCHEDULE, async () => {
     await pickAndMention();
