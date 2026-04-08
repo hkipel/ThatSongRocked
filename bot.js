@@ -23,6 +23,11 @@ const authConfig = process.env.GOOGLE_CREDENTIALS
 const auth = new google.auth.GoogleAuth(authConfig);
 const sheets = google.sheets({ version: "v4", auth });
 
+// Strips the bot's @mention tag from message content before logging
+function cleanContent(message) {
+  return message.content.replace(`<@${client.user.id}>`, "").trim();
+}
+
 // Appends a mention to a new sheet row and returns the row number
 async function logMention(username, content) {
   const timestamp = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
@@ -64,17 +69,17 @@ async function logPick(username) {
   }
 }
 
-// Updates column D with the current non-bot 🔥 count
-async function logFireCount(count) {
-  if (!lastLoggedRow) return;
+// Updates column D with the current non-bot 🔥 count for a given row
+async function logFireCount(count, row) {
+  if (!row) return;
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!D${lastLoggedRow}`,
+      range: `${SHEET_NAME}!D${row}`,
       valueInputOption: "USER_ENTERED",
       resource: { values: [[count]] },
     });
-    console.log(`📊 Updated 🔥 count to ${count} on row ${lastLoggedRow}`);
+    console.log(`📊 Updated 🔥 count to ${count} on row ${row}`);
   } catch (err) {
     console.error("❌ Error updating fire count:", err);
   }
@@ -101,6 +106,8 @@ let lastBotMessage = null;
 let lastPickedUserId = null;
 let lastLoggedRow = null;
 let lastReplyMessage = null;
+let lastMentionMessage = null;
+let lastMentionRow = null;
 
 const client = new Client({
   intents: [
@@ -118,7 +125,7 @@ client.once("clientReady", () => {
   console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (UTC)`);
 
   // Uncomment the line below to send a test message immediately on startup
-   pickAndMention();
+  // pickAndMention();
 
   cron.schedule(CRON_SCHEDULE, async () => {
     await pickAndMention();
@@ -134,7 +141,7 @@ client.on("messageCreate", async (message) => {
   if (message.author.id !== lastPickedUserId) return;
 
   console.log(`💬 Reply from ${message.author.tag}: ${message.content}`);
-  await logReply(message.content);
+  await logReply(cleanContent(message));
 
   lastReplyMessage = message;
   await message.react("🔥");
@@ -149,30 +156,40 @@ client.on("messageCreate", async (message) => {
 // Listens for bot mentions and logs them to the sheet
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
-  if (!message.mentions.has(client.user)) return;
+  if (!message.mentions.users.has(client.user.id)) return;
   // Skip if this is already handled by the song reply flow
   if (message.reference?.messageId === lastBotMessage?.id && message.author.id === lastPickedUserId) return;
 
   console.log(`📣 Mentioned by ${message.author.tag}: ${message.content}`);
-  const row = await logMention(message.author.tag, message.content);
+  const row = await logMention(message.author.tag, cleanContent(message));
 
   if (row) {
+    lastMentionMessage = message;
+    lastMentionRow = row;
+    await message.react("🔥");
     await message.reply(
-      `👋 Your message has been logged on row **${row}** of the sheet:\n${SHEET_URL}`
+      `🎸 That song rocked! Your entry & its 🔥 rating will be logged on row **${row}** of the sheet:\n${SHEET_URL}`
     );
   }
 });
 
-// Fires on every 🔥 reaction add or remove on the song reply message
+// Fires on every 🔥 reaction add or remove on song replies and mention messages
 async function handleFireReaction(reaction, _user) {
   if (reaction.partial) await reaction.fetch();
   if (reaction.emoji.name !== "🔥") return;
-  if (!lastReplyMessage) return;
-  if (reaction.message.id !== lastReplyMessage.id) return;
+
+  let targetRow = null;
+  if (lastReplyMessage && reaction.message.id === lastReplyMessage.id) {
+    targetRow = lastLoggedRow;
+  } else if (lastMentionMessage && reaction.message.id === lastMentionMessage.id) {
+    targetRow = lastMentionRow;
+  } else {
+    return;
+  }
 
   const users = await reaction.users.fetch();
   const nonBotCount = users.filter((u) => !u.bot).size;
-  await logFireCount(nonBotCount);
+  await logFireCount(nonBotCount, targetRow);
 }
 
 client.on("messageReactionAdd", handleFireReaction);
