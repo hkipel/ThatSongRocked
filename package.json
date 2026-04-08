@@ -2,6 +2,7 @@
   "dependencies": {
     "discord.js": "^14.26.2",
     "dotenv": "^17.4.1",
+    "googleapis": "^171.4.0",
     "node-cron": "^4.2.1"
   },
   "name": "_discord",
