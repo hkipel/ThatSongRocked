@@ -1,5 +1,11 @@
 require("dotenv").config();
 
+console.log("🔍 ENV CHECK:");
+console.log("  SPOTIFY_CLIENT_ID:", process.env.SPOTIFY_CLIENT_ID ? "✅ set" : "❌ missing");
+console.log("  SPOTIFY_CLIENT_SECRET:", process.env.SPOTIFY_CLIENT_SECRET ? "✅ set" : "❌ missing");
+console.log("  SPOTIFY_REFRESH_TOKEN:", process.env.SPOTIFY_REFRESH_TOKEN ? "✅ set" : "❌ missing");
+console.log("  SPOTIFY_PLAYLIST_ID:", process.env.SPOTIFY_PLAYLIST_ID ? "✅ set" : "❌ missing");
+
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const cron = require("node-cron");
 const { google } = require("googleapis");
@@ -30,6 +36,7 @@ const authConfig = process.env.GOOGLE_CREDENTIALS
   : { keyFile: "credentials.json", scopes: ["https://www.googleapis.com/auth/spreadsheets"] };
 const auth   = new google.auth.GoogleAuth(authConfig);
 const sheets = google.sheets({ version: "v4", auth });
+
 
 // ── Spotify Auth ──────────────────────────────────────────────────────────────
 let spotifyAccessToken = null;
