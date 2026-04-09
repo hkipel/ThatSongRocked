@@ -73,7 +73,7 @@ async function getTrackInfo(trackId) {
 }
 
 async function addTrackToPlaylist(trackId) {
-  const response = await fetch(`https://api.spotify.com/v1/playlists/${SPOTIFY_PLAYLIST_ID}/tracks`, {
+  const response = await fetch(`https://api.spotify.com/v1/playlists/${SPOTIFY_PLAYLIST_ID}/items`, {
     method: "POST",
     headers: {
       Authorization:  `Bearer ${spotifyAccessToken}`,
