@@ -74,11 +74,15 @@ async function addTrackToPlaylist(trackId) {
     },
     body: JSON.stringify({ uris: [`spotify:track:${trackId}`] }),
   });
+  const json = await response.json();
+  console.log("🔍 Spotify response status:", response.status);
+  console.log("🔍 Spotify response body:", JSON.stringify(json));
+  console.log("🔍 Playlist ID being used:", SPOTIFY_PLAYLIST_ID);
+  console.log("🔍 Access token (first 20 chars):", spotifyAccessToken?.slice(0, 20));
   if (!response.ok) {
-    const err = await response.json();
-    throw new Error(`Spotify API error: ${JSON.stringify(err)}`);
+    throw new Error(`Spotify API error: ${JSON.stringify(json)}`);
   }
-  return await response.json();
+  return json;
 }
 
 // ── Sheets Helpers ────────────────────────────────────────────────────────────
