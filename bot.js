@@ -260,6 +260,12 @@ client.on("messageCreate", async (message) => {
   console.log(`📣 Mentioned by ${message.author.tag}: ${message.content}`);
 
   const spotifyMatch = message.content.match(SPOTIFY_TRACK_REGEX);
+
+  if (!spotifyMatch) {
+    await message.reply("❌ Please reply with a Spotify track link. It should look like:\n`https://open.spotify.com/track/...`\n\nOpen Spotify, find your song, tap **Share → Copy Song Link**, and paste it here.");
+    return;
+  }
+
   let trackLabel = null;
 
   if (spotifyMatch) {
