@@ -174,12 +174,13 @@ async function logReply(content, messageId) {
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let lastBotMessage      = null;
-let lastPickedUserId    = null;
-let lastReplyMessage    = null;
-let lastMentionMessage  = null;
-let lastPickMessageId   = null;
+let lastBotMessage       = null;
+let lastPickedUserId     = null;
+let lastReplyMessage     = null;
+let lastMentionMessage   = null;
+let lastPickMessageId    = null;
 let lastMentionMessageId = null;
+let pickQueue            = [];
 
 // ── Discord Client ────────────────────────────────────────────────────────────
 const client = new Client({
@@ -325,6 +326,14 @@ async function getChannelMembers(channel) {
 }
 
 // ── Daily Pick ────────────────────────────────────────────────────────────────
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 async function pickAndMention() {
   try {
     const channel = await client.channels.fetch(CHANNEL_ID);
@@ -341,15 +350,33 @@ async function pickAndMention() {
       return;
     }
 
-    const randomMember = members.random();
+    // Refill and shuffle the queue when it runs out
+    if (pickQueue.length === 0) {
+      pickQueue = shuffleArray([...members.keys()]);
+      console.log(`🔄 New round started. Queue: ${pickQueue.length} members.`);
+    }
 
-    lastBotMessage    = await channel.send(MESSAGE_TEMPLATE(randomMember.toString()));
-    lastPickedUserId  = randomMember.user.id;
+    // Find the next queued member who is still eligible
+    let pickedMember = null;
+    while (pickQueue.length > 0) {
+      const nextId = pickQueue.shift();
+      const member = members.get(nextId);
+      if (member) { pickedMember = member; break; }
+      console.log(`⚠️ Skipped ${nextId} — no longer eligible.`);
+    }
+
+    if (!pickedMember) {
+      console.warn("⚠️ No eligible members left in queue.");
+      return;
+    }
+
+    lastBotMessage    = await channel.send(MESSAGE_TEMPLATE(pickedMember.toString()));
+    lastPickedUserId  = pickedMember.user.id;
     lastPickMessageId = lastBotMessage.id;
-    console.log(`📣 Mentioned ${randomMember.user.tag} at ${new Date().toISOString()}`);
-    console.log(`👥 Picked from pool of ${members.size} eligible channel members`);
+    console.log(`📣 Mentioned ${pickedMember.user.tag} at ${new Date().toISOString()}`);
+    console.log(`👥 ${pickQueue.length} members remaining in this round.`);
 
-    await logPick(randomMember.user.tag, lastBotMessage.id);
+    await logPick(pickedMember.user.tag, lastBotMessage.id);
   } catch (err) {
     console.error("❌ Error picking member:", err);
   }
