@@ -100,7 +100,7 @@ function cleanContent(message) {
 async function findRowById(id) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!E:E`,
+    range: `${SHEET_NAME}!G:G`,
   });
   const rows = response.data.values || [];
   for (let i = 0; i < rows.length; i++) {
@@ -114,9 +114,9 @@ async function logMention(username, content, messageId) {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:E`,
+      range: `${SHEET_NAME}!A:G`,
       valueInputOption: "USER_ENTERED",
-      resource: { values: [[timestamp, username, content, "", String(messageId)]] },
+      resource: { values: [[timestamp, username, "", "", content, "", String(messageId)]] },
     });
     console.log(`📊 Logged mention from ${username} (message ID: ${messageId})`);
   } catch (err) {
@@ -129,9 +129,9 @@ async function logPick(username, messageId) {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:E`,
+      range: `${SHEET_NAME}!A:G`,
       valueInputOption: "USER_ENTERED",
-      resource: { values: [[timestamp, username, "", "", String(messageId)]] },
+      resource: { values: [[timestamp, username, "", "", "", "", String(messageId)]] },
     });
     console.log(`📊 Logged PICK to sheet: ${username} (message ID: ${messageId})`);
   } catch (err) {
@@ -146,7 +146,7 @@ async function logFireCount(count, messageId) {
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!D${row}`,
+      range: `${SHEET_NAME}!F${row}`,
       valueInputOption: "USER_ENTERED",
       resource: { values: [[count]] },
     });
@@ -163,13 +163,102 @@ async function logReply(content, messageId) {
   try {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!C${row}`,
+      range: `${SHEET_NAME}!E${row}`,
       valueInputOption: "USER_ENTERED",
       resource: { values: [[content]] },
     });
     console.log(`📊 Logged REPLY to sheet row ${row}`);
   } catch (err) {
     console.error("❌ Error logging reply to sheet:", err);
+  }
+}
+
+async function logSongDetails(songName, artist, messageId) {
+  if (!messageId) return;
+  const row = await findRowById(messageId);
+  if (!row) return;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!C${row}:D${row}`,
+      valueInputOption: "USER_ENTERED",
+      resource: { values: [[artist, songName]] },
+    });
+    console.log(`📊 Logged song details to sheet row ${row}: ${songName} by ${artist}`);
+  } catch (err) {
+    console.error("❌ Error logging song details to sheet:", err);
+  }
+}
+
+async function findDuplicateSong(trackId, artist, title) {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!C:E`,
+  });
+  const rows = response.data.values || [];
+  for (const row of rows) {
+    const rowArtist = row[0]; // C
+    const rowTitle  = row[1]; // D
+    const rowLink   = row[2]; // E
+
+    if (rowLink) {
+      const match = rowLink.match(SPOTIFY_TRACK_REGEX);
+      if (match && match[1] === trackId) return { found: true, byId: true };
+    }
+
+    if (artist && title && rowArtist && rowTitle) {
+      if (rowArtist.toLowerCase() === artist.toLowerCase() &&
+          rowTitle.toLowerCase() === title.toLowerCase()) {
+        return { found: true, byId: false };
+      }
+    }
+  }
+  return { found: false };
+}
+
+async function backfillSongDetails() {
+  console.log("🔄 Starting backfill of missing song details...");
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:G`,
+    });
+    const rows = response.data.values || [];
+
+    await refreshSpotifyToken();
+
+    let count = 0;
+    for (let i = 1; i < rows.length; i++) { // skip header row
+      const row = rows[i];
+      const artist = row[2]; // C
+      const title  = row[3]; // D
+      const link   = row[4]; // E
+
+      if (!link || (artist && title)) continue;
+
+      const match = link.match(SPOTIFY_TRACK_REGEX);
+      if (!match) continue;
+
+      try {
+        const trackInfo = await getTrackInfo(match[1]);
+        if (!trackInfo) continue;
+
+        const rowNum = i + 1;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${SHEET_NAME}!C${rowNum}:D${rowNum}`,
+          valueInputOption: "USER_ENTERED",
+          resource: { values: [[trackInfo.artist, trackInfo.name]] },
+        });
+        console.log(`📊 Backfilled row ${rowNum}: ${trackInfo.name} by ${trackInfo.artist}`);
+        count++;
+      } catch (err) {
+        console.error(`❌ Error backfilling row ${i + 1}:`, err.message);
+      }
+    }
+    console.log(`✅ Backfill complete. Updated ${count} row(s).`);
+  } catch (err) {
+    console.error("❌ Error during backfill:", err);
   }
 }
 
@@ -194,9 +283,11 @@ const client = new Client({
   partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
 
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (UTC)`);
+
+  await backfillSongDetails();
 
   // Uncomment the line below to send a test message immediately on startup
   // pickAndMention();
@@ -224,13 +315,31 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  // Valid Spotify link — add to playlist
+  // Valid Spotify link — fetch track info, check for duplicate, then add to playlist
   const trackId = spotifyMatch[1];
-  let trackLabel = "your track";
+  let trackInfo = null;
 
   try {
     await refreshSpotifyToken();
-    const trackInfo = await getTrackInfo(trackId);
+    trackInfo = await getTrackInfo(trackId);
+  } catch (err) {
+    console.error("❌ Spotify error:", err.message);
+    await message.reply("⚠️ Something went wrong connecting to Spotify. Please try again or let an admin know.");
+    return;
+  }
+
+  const duplicate = await findDuplicateSong(trackId, trackInfo?.artist, trackInfo?.name);
+  if (duplicate.found) {
+    const reason = duplicate.byId
+      ? "That exact track has already been picked!"
+      : `**${trackInfo.name}** by **${trackInfo.artist}** has already been picked (possibly a different version).`;
+    await message.reply(`❌ ${reason} Please choose a different song.`);
+    return;
+  }
+
+  let trackLabel = "your track";
+
+  try {
     await addTrackToPlaylist(trackId);
     if (trackInfo) trackLabel = `**${trackInfo.name}** by ${trackInfo.artist}`;
     console.log(`🎵 Added track ${trackId} submitted by ${message.author.tag}`);
@@ -242,6 +351,7 @@ client.on("messageCreate", async (message) => {
 
   // Log to sheet and react
   await logReply(cleanContent(message), lastPickMessageId);
+  if (trackInfo) await logSongDetails(trackInfo.name, trackInfo.artist, lastPickMessageId);
   lastReplyMessage = message;
   await message.react("🔥");
 
@@ -266,24 +376,41 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  const trackId = spotifyMatch[1];
+  let trackInfo = null;
+
+  try {
+    await refreshSpotifyToken();
+    trackInfo = await getTrackInfo(trackId);
+  } catch (err) {
+    console.error("❌ Spotify error:", err.message);
+    await message.reply("⚠️ Something went wrong connecting to Spotify. Please try again or let an admin know.");
+    return;
+  }
+
+  const duplicate = await findDuplicateSong(trackId, trackInfo?.artist, trackInfo?.name);
+  if (duplicate.found) {
+    const reason = duplicate.byId
+      ? "That exact track has already been picked!"
+      : `**${trackInfo.name}** by **${trackInfo.artist}** has already been picked (possibly a different version).`;
+    await message.reply(`❌ ${reason} Please choose a different song.`);
+    return;
+  }
+
   let trackLabel = null;
 
-  if (spotifyMatch) {
-    const trackId = spotifyMatch[1];
-    try {
-      await refreshSpotifyToken();
-      const trackInfo = await getTrackInfo(trackId);
-      await addTrackToPlaylist(trackId);
-      if (trackInfo) trackLabel = `**${trackInfo.name}** by ${trackInfo.artist}`;
-      console.log(`🎵 Added track ${trackId} submitted by ${message.author.tag}`);
-    } catch (err) {
-      console.error("❌ Spotify error:", err.message);
-      await message.reply("⚠️ Something went wrong adding that track to Spotify. Please try again or let an admin know.");
-      return;
-    }
+  try {
+    await addTrackToPlaylist(trackId);
+    if (trackInfo) trackLabel = `**${trackInfo.name}** by ${trackInfo.artist}`;
+    console.log(`🎵 Added track ${trackId} submitted by ${message.author.tag}`);
+  } catch (err) {
+    console.error("❌ Spotify error:", err.message);
+    await message.reply("⚠️ Something went wrong adding that track to Spotify. Please try again or let an admin know.");
+    return;
   }
 
   await logMention(message.author.tag, cleanContent(message), message.id);
+  if (trackInfo) await logSongDetails(trackInfo.name, trackInfo.artist, message.id);
   lastMentionMessage   = message;
   lastMentionMessageId = message.id;
   await message.react("🔥");
