@@ -31,9 +31,10 @@ Members are shuffled into a random queue. Each member is picked once before the 
 | D | Title | Song title fetched from Spotify |
 | E | Link | Spotify track URL submitted by the user |
 | F | 🔥 Count | Number of fire reactions (bots excluded) |
-| G | Message ID | Internal — used by the bot to look up rows |
+| G | Pick Message ID | Internal — used by the bot to look up rows |
+| H | Reply Message ID | Internal — used to match 🔥 reactions to the correct row |
 
-On startup, the bot scans the sheet and backfills any rows that have a link but are missing artist/title.
+On startup, the bot backfills any rows missing artist/title (via Spotify) and any rows missing a reply message ID (via Discord message history).
 
 ---
 

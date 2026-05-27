@@ -114,9 +114,9 @@ async function logMention(username, content, messageId) {
   try {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A:G`,
+      range: `${SHEET_NAME}!A:H`,
       valueInputOption: "USER_ENTERED",
-      resource: { values: [[timestamp, username, "", "", content, "", String(messageId)]] },
+      resource: { values: [[timestamp, username, "", "", content, "", String(messageId), String(messageId)]] },
     });
     console.log(`📊 Logged mention from ${username} (message ID: ${messageId})`);
   } catch (err) {
@@ -139,34 +139,25 @@ async function logPick(username, messageId) {
   }
 }
 
-async function logFireCount(count, messageId) {
-  if (!messageId) return;
-  const row = await findRowById(messageId);
+async function logReply(content, pickMessageId, replyMessageId) {
+  if (!pickMessageId) return;
+  const row = await findRowById(pickMessageId);
   if (!row) return;
   try {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!F${row}`,
-      valueInputOption: "USER_ENTERED",
-      resource: { values: [[count]] },
-    });
-    console.log(`📊 Updated 🔥 count to ${count} on row ${row}`);
-  } catch (err) {
-    console.error("❌ Error updating fire count:", err);
-  }
-}
-
-async function logReply(content, messageId) {
-  if (!messageId) return;
-  const row = await findRowById(messageId);
-  if (!row) return;
-  try {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!E${row}`,
-      valueInputOption: "USER_ENTERED",
-      resource: { values: [[content]] },
-    });
+    await Promise.all([
+      sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_NAME}!E${row}`,
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [[content]] },
+      }),
+      sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${SHEET_NAME}!H${row}`,
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [[String(replyMessageId)]] },
+      }),
+    ]);
     console.log(`📊 Logged REPLY to sheet row ${row}`);
   } catch (err) {
     console.error("❌ Error logging reply to sheet:", err);
@@ -188,6 +179,18 @@ async function logSongDetails(songName, artist, messageId) {
   } catch (err) {
     console.error("❌ Error logging song details to sheet:", err);
   }
+}
+
+async function findRowByReplyMessageId(id) {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!H:H`,
+  });
+  const rows = response.data.values || [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === String(id)) return i + 1;
+  }
+  return null;
 }
 
 async function findDuplicateSong(trackId, artist, title) {
@@ -262,14 +265,57 @@ async function backfillSongDetails() {
   }
 }
 
+async function backfillReplyMessageIds(channel) {
+  console.log("🔄 Starting backfill of missing reply message IDs...");
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A:H`,
+    });
+    const rows = response.data.values || [];
+
+    let count = 0;
+    for (let i = 1; i < rows.length; i++) { // skip header row
+      const row        = rows[i];
+      const link       = row[4]; // E
+      const pickMsgId  = row[6]; // G
+      const replyMsgId = row[7]; // H
+
+      if (!link || !pickMsgId || replyMsgId) continue;
+
+      const match = link.match(SPOTIFY_TRACK_REGEX);
+      if (!match) continue;
+      const trackId = match[1];
+
+      try {
+        const messages = await channel.messages.fetch({ after: pickMsgId, limit: 50 });
+        const replyMsg = messages.find((m) => !m.author.bot && m.content.includes(trackId));
+        if (!replyMsg) continue;
+
+        const rowNum = i + 1;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${SHEET_NAME}!H${rowNum}`,
+          valueInputOption: "USER_ENTERED",
+          resource: { values: [[String(replyMsg.id)]] },
+        });
+        console.log(`📊 Backfilled reply message ID for row ${rowNum}`);
+        count++;
+      } catch (err) {
+        console.error(`❌ Error backfilling reply message ID for row ${i + 1}:`, err.message);
+      }
+    }
+    console.log(`✅ Reply message ID backfill complete. Updated ${count} row(s).`);
+  } catch (err) {
+    console.error("❌ Error during reply message ID backfill:", err);
+  }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
-let lastBotMessage       = null;
-let lastPickedUserId     = null;
-let lastReplyMessage     = null;
-let lastMentionMessage   = null;
-let lastPickMessageId    = null;
-let lastMentionMessageId = null;
-let pickQueue            = [];
+let lastBotMessage    = null;
+let lastPickedUserId  = null;
+let lastPickMessageId = null;
+let pickQueue         = [];
 
 // ── Discord Client ────────────────────────────────────────────────────────────
 const client = new Client({
@@ -287,7 +333,9 @@ client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (UTC)`);
 
+  const channel = await client.channels.fetch(CHANNEL_ID);
   await backfillSongDetails();
+  await backfillReplyMessageIds(channel);
 
   // Uncomment the line below to send a test message immediately on startup
   // pickAndMention();
@@ -350,9 +398,8 @@ client.on("messageCreate", async (message) => {
   }
 
   // Log to sheet and react
-  await logReply(cleanContent(message), lastPickMessageId);
+  await logReply(cleanContent(message), lastPickMessageId, message.id);
   if (trackInfo) await logSongDetails(trackInfo.name, trackInfo.artist, lastPickMessageId);
-  lastReplyMessage = message;
   await message.react("🔥");
 
   await message.reply(
@@ -411,8 +458,6 @@ client.on("messageCreate", async (message) => {
 
   await logMention(message.author.tag, cleanContent(message), message.id);
   if (trackInfo) await logSongDetails(trackInfo.name, trackInfo.artist, message.id);
-  lastMentionMessage   = message;
-  lastMentionMessageId = message.id;
   await message.react("🔥");
 
   const spotifyLine = trackLabel
@@ -428,18 +473,23 @@ async function handleFireReaction(reaction, _user) {
   if (reaction.partial) await reaction.fetch();
   if (reaction.emoji.name !== "🔥") return;
 
-  let targetMessageId = null;
-  if (lastReplyMessage && reaction.message.id === lastReplyMessage.id) {
-    targetMessageId = lastPickMessageId;
-  } else if (lastMentionMessage && reaction.message.id === lastMentionMessage.id) {
-    targetMessageId = lastMentionMessageId;
-  } else {
-    return;
-  }
+  const row = await findRowByReplyMessageId(reaction.message.id);
+  if (!row) return;
 
   const users       = await reaction.users.fetch();
   const nonBotCount = users.filter((u) => !u.bot).size;
-  await logFireCount(nonBotCount, targetMessageId);
+
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!F${row}`,
+      valueInputOption: "USER_ENTERED",
+      resource: { values: [[nonBotCount]] },
+    });
+    console.log(`📊 Updated 🔥 count to ${nonBotCount} on row ${row}`);
+  } catch (err) {
+    console.error("❌ Error updating fire count:", err);
+  }
 }
 
 client.on("messageReactionAdd",    handleFireReaction);
