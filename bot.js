@@ -288,8 +288,21 @@ async function backfillReplyMessageIds(channel) {
       const trackId = match[1];
 
       try {
-        const messages = await channel.messages.fetch({ after: pickMsgId, limit: 50 });
-        const replyMsg = messages.find((m) => !m.author.bot && m.content.includes(trackId));
+        let replyMsg = null;
+        let afterId  = pickMsgId;
+
+        for (let batch = 0; batch < 10 && !replyMsg; batch++) {
+          const messages = await channel.messages.fetch({ after: afterId, limit: 100 });
+          if (messages.size === 0) break;
+
+          replyMsg = messages.find((m) => !m.author.bot && m.content.includes(trackId));
+
+          // Advance the anchor to the newest message in this batch for next iteration
+          afterId = [...messages.keys()].reduce((max, id) =>
+            BigInt(id) > BigInt(max) ? id : max
+          );
+        }
+
         if (!replyMsg) continue;
 
         const rowNum = i + 1;
