@@ -181,34 +181,60 @@ async function logSongDetails(songName, artist, messageId) {
   }
 }
 
-async function getFireRanking() {
+async function getFireStats() {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SHEET_NAME}!B:F`,
   });
   const rows = response.data.values || [];
-  const totals = new Map();
+  const stats = new Map(); // user -> { total, count }
 
   for (let i = 1; i < rows.length; i++) { // skip header row
     const user      = rows[i][0]; // B
     const fireCount = parseInt(rows[i][4], 10) || 0; // F
     if (!user) continue;
-    totals.set(user, (totals.get(user) || 0) + fireCount);
+    const entry = stats.get(user) || { total: 0, count: 0 };
+    entry.total += fireCount;
+    entry.count += 1;
+    stats.set(user, entry);
   }
 
-  return [...totals.entries()].sort((a, b) => b[1] - a[1]);
+  return stats;
 }
 
-function formatRanking(ranking) {
+function formatRanking(stats) {
+  const ranking = [...stats.entries()]
+    .map(([user, { total }]) => [user, total])
+    .filter(([, total]) => total > 0)
+    .sort((a, b) => b[1] - a[1]);
+
   if (ranking.length === 0) return "No 🔥 ratings logged yet!";
 
   const medals = ["🥇", "🥈", "🥉"];
-  const lines = ranking.map(([user, count], i) => {
+  const lines = ranking.map(([user, total], i) => {
     const medal = medals[i] || `${i + 1}.`;
-    return `${medal} **${user}** — ${count} 🔥`;
+    return `${medal} **${user}** — ${total} 🔥`;
   });
 
   return `🔥 **Fire Ranking** 🔥\n\n${lines.join("\n")}`;
+}
+
+function formatAverageRanking(stats) {
+  const ranking = [...stats.entries()]
+    .map(([user, { total, count }]) => [user, total / count, count])
+    .filter(([, avg]) => avg > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  if (ranking.length === 0) return "No 🔥 ratings logged yet!";
+
+  const medals = ["🥇", "🥈", "🥉"];
+  const lines = ranking.map(([user, avg, count], i) => {
+    const medal = medals[i] || `${i + 1}.`;
+    const entries = count === 1 ? "entry" : "entries";
+    return `${medal} **${user}** — ${avg.toFixed(2)} 🔥 avg (${count} ${entries})`;
+  });
+
+  return `🔥 **Average Fire Ranking** 🔥\n\n${lines.join("\n")}`;
 }
 
 async function findRowByReplyMessageId(id) {
@@ -459,11 +485,13 @@ client.on("messageCreate", async (message) => {
 
   console.log(`📣 Mentioned by ${message.author.tag}: ${message.content}`);
 
-  if (/\brank\b/i.test(cleanContent(message))) {
+  const mentionContent = cleanContent(message);
+  if (/\brank\b/i.test(mentionContent)) {
     console.log(`📊 Rank request from ${message.author.tag}`);
     try {
-      const ranking = await getFireRanking();
-      await message.reply(formatRanking(ranking));
+      const stats  = await getFireStats();
+      const isAvg  = /\baverage\b/i.test(mentionContent);
+      await message.reply(isAvg ? formatAverageRanking(stats) : formatRanking(stats));
     } catch (err) {
       console.error("❌ Error building fire ranking:", err);
       await message.reply("⚠️ Something went wrong reading the sheet. Please try again or let an admin know.");

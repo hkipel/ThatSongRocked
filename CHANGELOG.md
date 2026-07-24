@@ -6,6 +6,8 @@
 
 ### Added
 - **🔥 fire ranking command** — Mentioning the bot with the word "rank" (e.g. `@ThatSongRocked rank`) replies with a leaderboard of users ranked by total 🔥 reactions across all their logged submissions, read live from the Google Sheet.
+- **🔥 rank average command** — Mentioning the bot with "rank average" (e.g. `@ThatSongRocked rank average`) replies with a leaderboard ranked by average 🔥 reactions per entry, rewarding consistent picks over high-volume ones.
+- Both rank commands omit users with zero total 🔥 reactions from the leaderboard.
 
 ---
 
