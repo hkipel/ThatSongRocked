@@ -181,6 +181,36 @@ async function logSongDetails(songName, artist, messageId) {
   }
 }
 
+async function getFireRanking() {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!B:F`,
+  });
+  const rows = response.data.values || [];
+  const totals = new Map();
+
+  for (let i = 1; i < rows.length; i++) { // skip header row
+    const user      = rows[i][0]; // B
+    const fireCount = parseInt(rows[i][4], 10) || 0; // F
+    if (!user) continue;
+    totals.set(user, (totals.get(user) || 0) + fireCount);
+  }
+
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function formatRanking(ranking) {
+  if (ranking.length === 0) return "No 🔥 ratings logged yet!";
+
+  const medals = ["🥇", "🥈", "🥉"];
+  const lines = ranking.map(([user, count], i) => {
+    const medal = medals[i] || `${i + 1}.`;
+    return `${medal} **${user}** — ${count} 🔥`;
+  });
+
+  return `🔥 **Fire Ranking** 🔥\n\n${lines.join("\n")}`;
+}
+
 async function findRowByReplyMessageId(id) {
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -428,6 +458,18 @@ client.on("messageCreate", async (message) => {
   if (message.reference?.messageId === lastBotMessage?.id && message.author.id === lastPickedUserId) return;
 
   console.log(`📣 Mentioned by ${message.author.tag}: ${message.content}`);
+
+  if (/\brank\b/i.test(cleanContent(message))) {
+    console.log(`📊 Rank request from ${message.author.tag}`);
+    try {
+      const ranking = await getFireRanking();
+      await message.reply(formatRanking(ranking));
+    } catch (err) {
+      console.error("❌ Error building fire ranking:", err);
+      await message.reply("⚠️ Something went wrong reading the sheet. Please try again or let an admin know.");
+    }
+    return;
+  }
 
   const spotifyMatch = message.content.match(SPOTIFY_TRACK_REGEX);
 

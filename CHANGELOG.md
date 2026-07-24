@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-07-24
+
+### Added
+- **🔥 fire ranking command** — Mentioning the bot with the word "rank" (e.g. `@ThatSongRocked rank`) replies with a leaderboard of users ranked by total 🔥 reactions across all their logged submissions, read live from the Google Sheet.
+
+---
+
 ## 2026-05-27
 
 ### Added
