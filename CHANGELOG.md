@@ -5,7 +5,7 @@
 ## 2026-10-14
 
 ### Fixed
-- **Rank average entry count** — Averages were dividing by every row logged for a user, including daily picks they never answered. Rank commands now only count rows with a Spotify link in column E, so "entries" reflects actual song submissions and the average is 🔥 per submitted song.
+- **Rank average entry count** — Averages were dividing by every row logged for a user, including daily picks they never answered. Rank commands now only count rows that have something in Link (column E) or at least one 🔥 (column F), so "entries" reflects actual song submissions (including non-Spotify links or picks with a missing link) and the average is 🔥 per submitted song.
 
 ---
 
