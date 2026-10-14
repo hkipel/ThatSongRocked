@@ -55,9 +55,23 @@ async function refreshSpotifyToken() {
   });
 
   const data = await response.json();
+  if (data.error === "invalid_grant") {
+    const err = new Error(
+      `Spotify refresh token expired/revoked — run get-refresh-token.js and update SPOTIFY_REFRESH_TOKEN in Railway. (${JSON.stringify(data)})`
+    );
+    err.code = "SPOTIFY_REAUTH";
+    throw err;
+  }
   if (!data.access_token) throw new Error(`Spotify token refresh failed: ${JSON.stringify(data)}`);
   spotifyAccessToken = data.access_token;
   console.log("🔑 Spotify access token refreshed.");
+}
+
+function spotifyErrorMessage(err) {
+  if (err.code === "SPOTIFY_REAUTH") {
+    return "🔑 The bot's Spotify login has expired, so I can't add songs right now. An admin needs to re-authorize Spotify — hang onto your link and try again once that's done!";
+  }
+  return "⚠️ Something went wrong connecting to Spotify. Please try again or let an admin know.";
 }
 
 async function getTrackInfo(trackId) {
@@ -441,7 +455,7 @@ client.on("messageCreate", async (message) => {
     trackInfo = await getTrackInfo(trackId);
   } catch (err) {
     console.error("❌ Spotify error:", err.message);
-    await message.reply("⚠️ Something went wrong connecting to Spotify. Please try again or let an admin know.");
+    await message.reply(spotifyErrorMessage(err));
     return;
   }
 
@@ -514,7 +528,7 @@ client.on("messageCreate", async (message) => {
     trackInfo = await getTrackInfo(trackId);
   } catch (err) {
     console.error("❌ Spotify error:", err.message);
-    await message.reply("⚠️ Something went wrong connecting to Spotify. Please try again or let an admin know.");
+    await message.reply(spotifyErrorMessage(err));
     return;
   }
 
