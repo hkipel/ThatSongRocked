@@ -205,8 +205,12 @@ async function getFireStats() {
 
   for (let i = 1; i < rows.length; i++) { // skip header row
     const user      = rows[i][0]; // B
+    const link      = rows[i][3]; // E
     const fireCount = parseInt(rows[i][4], 10) || 0; // F
     if (!user) continue;
+    // Only count rows where the user actually submitted a song. Every daily
+    // pick logs a row, so rows without a Spotify link are unanswered mentions.
+    if (!link || !SPOTIFY_TRACK_REGEX.test(link)) continue;
     const entry = stats.get(user) || { total: 0, count: 0 };
     entry.total += fireCount;
     entry.count += 1;
