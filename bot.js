@@ -14,7 +14,8 @@ const { google } = require("googleapis");
 const TOKEN              = process.env.DISCORD_TOKEN;
 const CHANNEL_ID         = process.env.DISCORD_CHANNEL_ID;
 const EXCLUDED_USER_IDS  = ["578024967057309726"];
-const CRON_SCHEDULE      = "0 14 * * 1-5";         // 10:00 AM EDT (UTC-4), Mon–Fri
+const CRON_SCHEDULE      = "0 10 * * 1-5";         // 10:00 AM Mon–Fri, in CRON_TIMEZONE
+const CRON_TIMEZONE      = "America/New_York";      // follows EST/EDT automatically
 const MESSAGE_TEMPLATE   = (user) => `🎵 ${user} - it's your turn to pick a song that rocked! Reply to this message with a Spotify track link 🎶`;
 const SPREADSHEET_ID     = process.env.GOOGLE_SHEET_ID;
 const SHEET_NAME         = "Log";
@@ -418,7 +419,7 @@ const client = new Client({
 
 client.once("clientReady", async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (UTC)`);
+  console.log(`⏰ Scheduled to run: ${CRON_SCHEDULE} (${CRON_TIMEZONE})`);
 
   const channel = await client.channels.fetch(CHANNEL_ID);
   await backfillSongDetails();
@@ -429,7 +430,7 @@ client.once("clientReady", async () => {
 
   cron.schedule(CRON_SCHEDULE, async () => {
     await pickAndMention();
-  });
+  }, { timezone: CRON_TIMEZONE });
 });
 
 // ── Song Reply Handler ────────────────────────────────────────────────────────
