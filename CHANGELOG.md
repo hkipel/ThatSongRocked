@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-11-20
+
+### Fixed
+- **Daylight saving drift** — The daily pick was scheduled at a fixed 14:00 UTC, so it moved to 9:00 AM when clocks fell back to EST. The cron job now runs at 10:00 in the `America/New_York` timezone, so it stays at 10:00 AM Eastern year-round.
+
+---
+
 ## 2026-10-14
 
 ### Fixed

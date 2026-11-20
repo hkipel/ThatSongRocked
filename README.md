@@ -6,7 +6,7 @@ A Discord bot that runs a daily song-picking rotation for a server channel. Each
 
 ## How It Works
 
-1. **Daily pick** — At 10:00 AM EDT (Monday–Friday), the bot mentions a randomly selected channel member and asks them to reply with a Spotify track link.
+1. **Daily pick** — At 10:00 AM Eastern (Monday–Friday, adjusts for daylight saving automatically), the bot mentions a randomly selected channel member and asks them to reply with a Spotify track link.
 2. **Song submission** — The picked user (or any user mentioning the bot) replies with a `open.spotify.com/track/...` link.
 3. **Duplicate check** — The bot checks the Google Sheet for the same track ID and for matching artist + title (to catch different versions of the same song). If a match is found, the user is asked to pick again.
 4. **Playlist update** — The track is added to the configured Spotify playlist.
